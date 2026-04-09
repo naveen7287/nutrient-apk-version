@@ -1,0 +1,5 @@
+{
+  "name": "NutrientApk",
+  "description": "AI-powered food scanner and nutrition tracker with personalized health insights.",
+  "requestFramePermissions": ["camera"]
+}
