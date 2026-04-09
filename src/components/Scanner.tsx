@@ -60,7 +60,8 @@ export default function Scanner({ profile, onLogAdded }: ScannerProps) {
     
     try {
       const base64Data = await fileToBase64(image);
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || '';
+      const ai = new GoogleGenAI(apiKey);
       
       const prompt = `
         Analyze this food image. The food is from a ${sourceType} source.
