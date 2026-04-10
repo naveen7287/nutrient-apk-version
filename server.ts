@@ -99,7 +99,7 @@ app.post('/api/analyze', async (req, res) => {
     }
 
     console.log("INITIALIZING GEMINI SDK...");
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI(apiKey);
     
     const prompt = `
       Analyze this food image. The food is from a ${sourceType} source.
@@ -148,7 +148,7 @@ app.post('/api/analyze', async (req, res) => {
       ],
     });
 
-    let text = result.text;
+    let text = result.response?.candidates?.[0]?.content?.parts?.[0]?.text;
     console.log("RAW AI RESPONSE:", text);
 
     if (!text) throw new Error('No response from AI');
