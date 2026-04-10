@@ -60,45 +60,19 @@ export default function Scanner({ profile, onLogAdded }: ScannerProps) {
     try {
       const base64Data = await fileToBase64(image);
       
-      // 1. Get API Key (VITE_ prefix is required for Vite builds)
+      // 1. Get API Key from the build environment
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || '';
       if (!apiKey) {
-        throw new Error('Gemini API Key is missing. Please check your GitHub Secrets or .env file.');
+        throw new Error('Gemini API Key is missing. Please check your GitHub Secrets.');
       }
 
-      // 2. Use the standard public SDK pattern
+      // 2. Initialize the standard public SDK
       const genAI = new GoogleGenAI(apiKey);
       const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
       
-      const prompt = `
-        Analyze this food image. The food is from a ${sourceType} source.
-        User health issues: ${profile?.healthIssues || 'None'}.
-        
-        Return STRICT JSON format:
-        {
-          "food_name": "string",
-          "ingredients": ["string"],
-          "nutrition": {
-            "calories": number,
-            "protein_g": number,
-            "fat_g": number,
-            "carbs_g": number
-          },
-          "confidence": number,
-          "health_recommendation": {
-            "should_consume": boolean,
-            "reason": "string"
-          }
-        }
-        
-        Rules:
-        - Never guess unseen ingredients.
-        - Only include visible ingredients.
-        - If no food detected or unclear, return: {"error": "No food detected"}
-        - Health recommendation must be based on ingredients, nutrition, and user health issues.
-      `;
+      const prompt = `Analyze this food image...`; // (Keep your existing prompt text)
 
-      // 3. Call the AI using the standard generateContent method
+      // 3. Generate content using the standard pattern
       const result = await model.generateContent([
         prompt,
         {
@@ -110,7 +84,7 @@ export default function Scanner({ profile, onLogAdded }: ScannerProps) {
       ]);
 
       const response = await result.response;
-      const text = response.text(); // This MUST be a function call .text()
+      const text = response.text(); // Must use .text() function
       
       if (!text) throw new Error('No response from AI');
 
@@ -126,7 +100,7 @@ export default function Scanner({ profile, onLogAdded }: ScannerProps) {
       }
     } catch (error) {
       console.error('Scan error:', error);
-      alert(error instanceof Error ? error.message : 'Failed to analyze image. Please try again.');
+      alert(error instanceof Error ? error.message : 'Failed to analyze image.');
     } finally {
       setScanning(false);
     }
