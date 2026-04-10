@@ -1,16 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { 
-  Camera, 
-  Upload, 
-  X, 
-  Check, 
-  AlertTriangle, 
-  Activity, 
-  Beef, 
-  Droplets, 
-  Flame,
-  Plus,
-  Trash2
+  Camera, Upload, X, Check, AlertTriangle, Activity, Beef, Droplets, Flame, Plus, Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI } from "@google/genai";
@@ -45,10 +35,7 @@ export default function Scanner({ profile, onLogAdded }: ScannerProps) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.readAsDataURL(file);
-      reader.onload = () => {
-        const base64String = (reader.result as string).split(',')[1];
-        resolve(base64String);
-      };
+      reader.onload = () => resolve((reader.result as string).split(',')[1]);
       reader.onerror = error => reject(error);
     });
   };
@@ -59,35 +46,44 @@ export default function Scanner({ profile, onLogAdded }: ScannerProps) {
     
     try {
       const base64Data = await fileToBase64(image);
-      
-      // 1. Get API Key from the build environment
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || '';
-      if (!apiKey) {
-        throw new Error('Gemini API Key is missing. Please check your GitHub Secrets.');
+      
+      if (!apiKey || apiKey === "undefined" || apiKey === "null") {
+        throw new Error(`API Key Error: The key is empty. Please check your GitHub Secrets.`);
       }
 
-      // 2. Initialize the standard public SDK
       const genAI = new GoogleGenAI(apiKey);
       const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
       
-      const prompt = `Analyze this food image...`; // (Keep your existing prompt text)
+      const prompt = `
+        Analyze this food image. The food is from a ${sourceType} source.
+        User health issues: ${profile?.healthIssues || 'None'}.
+        
+        Return STRICT JSON format:
+        {
+          "food_name": "string",
+          "ingredients": ["string"],
+          "nutrition": {
+            "calories": number,
+            "protein_g": number,
+            "fat_g": number,
+            "carbs_g": number
+          },
+          "confidence": number,
+          "health_recommendation": {
+            "should_consume": boolean,
+            "reason": "string"
+          }
+        }
+      `;
 
-      // 3. Generate content using the standard pattern
       const result = await model.generateContent([
         prompt,
-        {
-          inlineData: {
-            data: base64Data,
-            mimeType: image.type,
-          },
-        },
+        { inlineData: { data: base64Data, mimeType: image.type } },
       ]);
 
       const response = await result.response;
-      const text = response.text(); // Must use .text() function
-      
-      if (!text) throw new Error('No response from AI');
-
+      const text = response.text();
       const jsonStr = text.replace(/```json|```/g, '').trim();
       const data = JSON.parse(jsonStr);
 
@@ -116,7 +112,9 @@ export default function Scanner({ profile, onLogAdded }: ScannerProps) {
       type: sourceType
     };
 
-    const baseUrl = import.meta.env.VITE_APP_URL || '';
+    let baseUrl = import.meta.env.VITE_APP_URL || '';
+    if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
+
     try {
       const res = await fetch(`${baseUrl}/api/logs`, {
         method: 'POST',
@@ -160,20 +158,14 @@ export default function Scanner({ profile, onLogAdded }: ScannerProps) {
 
       {!sourceType ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <button 
-            onClick={() => setSourceType('homemade')}
-            className="bg-white p-10 rounded-[2.5rem] border-2 border-transparent hover:border-emerald-500 transition-all group shadow-sm"
-          >
+          <button onClick={() => setSourceType('homemade')} className="bg-white p-10 rounded-[2.5rem] border-2 border-transparent hover:border-emerald-500 transition-all group shadow-sm">
             <div className="w-20 h-20 bg-emerald-50 rounded-3xl flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
               <Activity className="w-10 h-10 text-emerald-500" />
             </div>
             <h3 className="text-xl font-bold mb-2">Homemade</h3>
             <p className="text-gray-400 text-sm">Meals prepared at home with fresh ingredients.</p>
           </button>
-          <button 
-            onClick={() => setSourceType('restaurant')}
-            className="bg-white p-10 rounded-[2.5rem] border-2 border-transparent hover:border-blue-500 transition-all group shadow-sm"
-          >
+          <button onClick={() => setSourceType('restaurant')} className="bg-white p-10 rounded-[2.5rem] border-2 border-transparent hover:border-blue-500 transition-all group shadow-sm">
             <div className="w-20 h-20 bg-blue-50 rounded-3xl flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
               <Beef className="w-10 h-10 text-blue-500" />
             </div>
@@ -183,58 +175,25 @@ export default function Scanner({ profile, onLogAdded }: ScannerProps) {
         </div>
       ) : (
         <div className="space-y-8">
-          <div 
-            onClick={() => !scanning && fileInputRef.current?.click()}
-            className={cn(
-              "relative bg-white rounded-[2.5rem] border-4 border-dashed p-12 text-center transition-all cursor-pointer overflow-hidden",
-              preview ? "border-emerald-500" : "border-gray-100 hover:border-emerald-200"
-            )}
-          >
+          <div onClick={() => !scanning && fileInputRef.current?.click()} className={cn("relative bg-white rounded-[2.5rem] border-4 border-dashed p-12 text-center transition-all cursor-pointer overflow-hidden", preview ? "border-emerald-500" : "border-gray-100 hover:border-emerald-200")}>
             {preview ? (
               <div className="relative aspect-video rounded-2xl overflow-hidden shadow-inner">
                 <img src={preview} alt="Preview" className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                  <Camera className="w-12 h-12 text-white" />
-                </div>
               </div>
             ) : (
               <div className="py-10">
-                <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <Upload className="w-10 h-10 text-gray-300" />
-                </div>
+                <Upload className="w-10 h-10 text-gray-300 mx-auto mb-6" />
                 <h3 className="text-xl font-bold mb-2">Upload Meal Photo</h3>
-                <p className="text-gray-400">Click to browse or drag and drop JPG/PNG</p>
+                <p className="text-gray-400">Click to browse or drag and drop</p>
               </div>
             )}
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              onChange={handleFileChange} 
-              className="hidden" 
-              accept="image/*" 
-            />
+            <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" />
           </div>
 
           <div className="flex gap-4">
-            <button 
-              onClick={reset}
-              className="flex-1 bg-gray-100 text-gray-600 py-4 rounded-2xl font-bold hover:bg-gray-200 transition-all"
-            >
-              Cancel
-            </button>
-            <button 
-              onClick={handleScan}
-              disabled={!image || scanning}
-              className="flex-[2] bg-emerald-500 text-white py-4 rounded-2xl font-bold shadow-lg shadow-emerald-200 hover:bg-emerald-600 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {scanning ? (
-                <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }}><Activity className="w-6 h-6" /></motion.div>
-              ) : (
-                <>
-                  <Camera className="w-6 h-6" />
-                  Analyze Nutrition
-                </>
-              )}
+            <button onClick={reset} className="flex-1 bg-gray-100 text-gray-600 py-4 rounded-2xl font-bold hover:bg-gray-200 transition-all">Cancel</button>
+            <button onClick={handleScan} disabled={!image || scanning} className="flex-[2] bg-emerald-500 text-white py-4 rounded-2xl font-bold shadow-lg shadow-emerald-200 hover:bg-emerald-600 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+              {scanning ? <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }}><Activity className="w-6 h-6" /></motion.div> : <><Camera className="w-6 h-6" /> Analyze Nutrition</>}
             </button>
           </div>
         </div>
@@ -243,25 +202,12 @@ export default function Scanner({ profile, onLogAdded }: ScannerProps) {
       <AnimatePresence>
         {showConfirm && result && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowConfirm(false)}
-              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            />
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
-            >
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowConfirm(false)} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.9, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9, y: 20 }} className="relative bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
               <div className="p-8 overflow-y-auto custom-scrollbar">
                 <div className="flex items-center justify-between mb-8">
                   <h2 className="text-2xl font-bold">Confirm Nutrition</h2>
-                  <button onClick={() => setShowConfirm(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
-                    <X className="w-6 h-6 text-gray-400" />
-                  </button>
+                  <button onClick={() => setShowConfirm(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><X className="w-6 h-6 text-gray-400" /></button>
                 </div>
 
                 <div className="space-y-8">
@@ -276,12 +222,7 @@ export default function Scanner({ profile, onLogAdded }: ScannerProps) {
                   </div>
 
                   {result.health_recommendation && (
-                    <div className={cn(
-                      "p-6 rounded-3xl border-2 flex gap-4",
-                      result.health_recommendation.should_consume 
-                        ? "bg-emerald-50 border-emerald-100 text-emerald-700" 
-                        : "bg-red-50 border-red-100 text-red-700"
-                    )}>
+                    <div className={cn("p-6 rounded-3xl border-2 flex gap-4", result.health_recommendation.should_consume ? "bg-emerald-50 border-emerald-100 text-emerald-700" : "bg-red-50 border-red-100 text-red-700")}>
                       {result.health_recommendation.should_consume ? <Check className="w-8 h-8 shrink-0" /> : <AlertTriangle className="w-8 h-8 shrink-0" />}
                       <div>
                         <h4 className="font-bold mb-1">Health Recommendation</h4>
@@ -306,57 +247,26 @@ export default function Scanner({ profile, onLogAdded }: ScannerProps) {
                   </div>
 
                   <div className="space-y-4">
-                    <h4 className="font-bold text-lg flex items-center gap-2">
-                      Ingredients
-                      <span className="text-xs font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded-md">
-                        {manualIngredients.length} detected
-                      </span>
-                    </h4>
+                    <h4 className="font-bold text-lg flex items-center gap-2">Ingredients</h4>
                     <div className="flex flex-wrap gap-2">
                       {manualIngredients.map((ing, idx) => (
                         <div key={`${ing}-${idx}`} className="bg-gray-50 border border-gray-100 px-3 py-1.5 rounded-xl flex items-center gap-2 group">
                           <span className="text-sm font-medium text-gray-600">{ing}</span>
-                          <button onClick={() => removeIngredient(idx)} className="text-gray-300 hover:text-red-500 transition-colors">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          <button onClick={() => removeIngredient(idx)} className="text-gray-300 hover:text-red-500 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
                         </div>
                       ))}
                     </div>
-
                     <div className="flex gap-2">
-                      <input 
-                        type="text" 
-                        value={newIngredient}
-                        onChange={e => setNewIngredient(e.target.value)}
-                        onKeyPress={e => e.key === 'Enter' && addIngredient()}
-                        placeholder="Add missing ingredient..."
-                        className="flex-1 bg-gray-50 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500"
-                      />
-                      <button 
-                        onClick={addIngredient}
-                        className="bg-gray-100 text-gray-600 p-3 rounded-xl hover:bg-gray-200 transition-all"
-                      >
-                        <Plus className="w-5 h-5" />
-                      </button>
+                      <input type="text" value={newIngredient} onChange={e => setNewIngredient(e.target.value)} onKeyPress={e => e.key === 'Enter' && addIngredient()} placeholder="Add missing ingredient..." className="flex-1 bg-gray-50 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500" />
+                      <button onClick={addIngredient} className="bg-gray-100 text-gray-600 p-3 rounded-xl hover:bg-gray-200 transition-all"><Plus className="w-5 h-5" /></button>
                     </div>
                   </div>
                 </div>
               </div>
 
               <div className="p-8 bg-gray-50 border-t border-gray-100 flex gap-4">
-                <button 
-                  onClick={() => setShowConfirm(false)}
-                  className="flex-1 bg-white border border-gray-200 text-gray-600 py-4 rounded-2xl font-bold hover:bg-gray-50 transition-all"
-                >
-                  Edit
-                </button>
-                <button 
-                  onClick={handleConfirm}
-                  className="flex-[2] bg-emerald-500 text-white py-4 rounded-2xl font-bold shadow-lg shadow-emerald-200 hover:bg-emerald-600 transition-all flex items-center justify-center gap-2"
-                >
-                  <Check className="w-6 h-6" />
-                  Confirm & Add to Log
-                </button>
+                <button onClick={() => setShowConfirm(false)} className="flex-1 bg-white border border-gray-200 text-gray-600 py-4 rounded-2xl font-bold hover:bg-gray-50 transition-all">Edit</button>
+                <button onClick={handleConfirm} className="flex-[2] bg-emerald-500 text-white py-4 rounded-2xl font-bold shadow-lg shadow-emerald-200 hover:bg-emerald-600 transition-all flex items-center justify-center gap-2"><Check className="w-6 h-6" /> Confirm & Add to Log</button>
               </div>
             </motion.div>
           </div>
