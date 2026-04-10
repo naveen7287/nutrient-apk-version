@@ -34,40 +34,36 @@ export default function Scanner({ profile, onLogAdded }: ScannerProps) {
     
     try {
       const base64Data = await fileToBase64(image);
-      
       let baseUrl = import.meta.env.VITE_APP_URL || '';
       if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
 
-      // CORRECTED: Calling /api/analyze
-      const response = await fetch(`${baseUrl}/api/analyze`, {
+      const targetUrl = `${baseUrl}/api/analyze`;
+      console.log("DEBUG: Calling URL ->", targetUrl);
+
+      const response = await fetch(targetUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          imageBase64: base64Data,
-          sourceType,
-          profile
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: base64Data, sourceType, profile }),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to analyze image');
-      }
+      console.log("DEBUG: Status Code ->", response.status);
+      
+      const responseText = await response.text();
+      console.log("DEBUG: Raw Response ->", responseText.substring(0, 100)); // See if it's JSON or HTML
 
-      const data = await response.json();
+      if (!response.ok) throw new Error(`Server Error: ${response.status}`);
+
+      const data = JSON.parse(responseText);
       setResult(data);
       setManualIngredients(data.ingredients || []);
       setShowConfirm(true);
     } catch (error) {
       console.error('Scan error:', error);
-      alert(error instanceof Error ? error.message : 'Failed to analyze image. Please try again.');
+      alert("Analysis failed. Check console for debug logs.");
     } finally {
       setScanning(false);
     }
   };
-
   const handleConfirm = async () => {
     if (!result) return;
     let baseUrl = import.meta.env.VITE_APP_URL || '';
