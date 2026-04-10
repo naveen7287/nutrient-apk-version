@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { GoogleGenAI } from "@google/genai";
 
 dotenv.config();
 
@@ -12,51 +13,35 @@ const PORT = 3000;
 const DB_FILE = path.join(process.cwd(), 'db.json');
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' })); // Increased limit for base64 images
 
 // Helper to read/write DB
 const readDB = () => {
   try {
-    if (!fs.existsSync(DB_FILE)) {
-      return { profiles: {}, logs: [] };
-    }
+    if (!fs.existsSync(DB_FILE)) return { profiles: {}, logs: [] };
     const data = fs.readFileSync(DB_FILE, 'utf-8');
     return JSON.parse(data);
   } catch (error) {
-    console.error('Error reading DB:', error);
     return { profiles: {}, logs: [] };
   }
 };
+
 const writeDB = (data: any) => {
-  try {
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
-  } catch (error) {
-    console.error('Error writing DB:', error);
-  }
+  fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
 };
 
 // Mifflin-St Jeor Equation
 function calculateTargets(profile: any) {
   const { weight, height, age, gender, activityLevel } = profile;
-  let bmr;
-  if (gender === 'male') {
-    bmr = 10 * weight + 6.25 * height - 5 * age + 5;
-  } else {
-    bmr = 10 * weight + 6.25 * height - 5 * age - 161;
-  }
+  let bmr = gender === 'male' 
+    ? (10 * weight + 6.25 * height - 5 * age + 5)
+    : (10 * weight + 6.25 * height - 5 * age - 161);
 
   const multipliers: Record<string, number> = {
-    sedentary: 1.2,
-    light: 1.375,
-    moderate: 1.55,
-    active: 1.725,
-    very_active: 1.9,
+    sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725, very_active: 1.9
   };
 
   const tdee = Math.round(bmr * (multipliers[activityLevel] || 1.2));
-  
-  // Macros: 30% Protein, 25% Fat, 45% Carbs
-  // Protein: 4 cal/g, Fat: 9 cal/g, Carbs: 4 cal/g
   return {
     calories: tdee,
     protein_g: Math.round((tdee * 0.30) / 4),
@@ -96,24 +81,60 @@ app.post('/api/logs', (req, res) => {
   res.json(log);
 });
 
+// NEW: AI Analysis Endpoint
+app.post('/api/analyze', async (req, res) => {
+  try {
+    const { imageBase64, sourceType, profile } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    if (!apiKey) {
+      return res.status(500).json({ error: 'Server Error: Gemini API Key not configured.' });
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
+    
+    const prompt = `
+      Analyze this food image. The food is from a ${sourceType} source.
+      User health issues: ${profile?.healthIssues || 'None'}.
+      
+      Return STRICT JSON format:
+      {
+        "food_name": "string",
+        "ingredients": ["string"],
+        "nutrition": {
+          "calories": number, "protein_g": number, "fat_g": number, "carbs_g": number
+        },
+        "confidence": number,
+        "health_recommendation": { "should_consume": boolean, "reason": "string" }
+      }
+    `;
+
+    const result = await ai.models.generateContent({
+      model: "gemini-1.5-flash",
+      contents: [{
+        role: 'user',
+        parts: [{ text: prompt }, { inlineData: { data: imageBase64, mimeType: "image/jpeg" } }]
+      }]
+    });
+
+    const text = result.text;
+    const jsonStr = text.replace(/```json|```/g, '').trim();
+    res.json(JSON.parse(jsonStr));
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to analyze image' });
+  }
+});
+
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
+    const vite = await createViteServer({ server: { middlewareMode: true }, appType: 'spa' });
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
+    app.get('*', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
   }
-
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+  app.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));
 }
 
 startServer();
