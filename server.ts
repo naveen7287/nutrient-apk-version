@@ -13,9 +13,8 @@ const PORT = 3000;
 const DB_FILE = path.join(process.cwd(), 'db.json');
 
 app.use(cors());
-app.use(express.json({ limit: '10mb' })); // Increased limit for base64 images
+app.use(express.json({ limit: '10mb' }));
 
-// Helper to read/write DB
 const readDB = () => {
   try {
     if (!fs.existsSync(DB_FILE)) return { profiles: {}, logs: [] };
@@ -30,7 +29,6 @@ const writeDB = (data: any) => {
   fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
 };
 
-// Mifflin-St Jeor Equation
 function calculateTargets(profile: any) {
   const { weight, height, age, gender, activityLevel } = profile;
   let bmr = gender === 'male' 
@@ -50,7 +48,6 @@ function calculateTargets(profile: any) {
   };
 }
 
-// API Routes
 app.get('/api/profile', (req, res) => {
   const db = readDB();
   res.json(db.profiles.default || null);
@@ -81,46 +78,66 @@ app.post('/api/logs', (req, res) => {
   res.json(log);
 });
 
-// NEW: AI Analysis Endpoint
+// CORRECTED: AI Analysis Endpoint
 app.post('/api/analyze', async (req, res) => {
   try {
     const { imageBase64, sourceType, profile } = req.body;
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
-      return res.status(500).json({ error: 'Server Error: Gemini API Key not configured.' });
+      return res.status(500).json({ error: 'API key missing on server' });
     }
 
+    // Using the correct SDK pattern for @google/genai v1.x
     const ai = new GoogleGenAI({ apiKey });
     
     const prompt = `
-      Analyze this food image. The food is from a ${sourceType} source.
-      User health issues: ${profile?.healthIssues || 'None'}.
-      
-      Return STRICT JSON format:
+      Analyze this food image. Source: ${sourceType}.
+      Health issues: ${profile?.healthIssues || 'None'}.
+
+      Return JSON:
       {
         "food_name": "string",
         "ingredients": ["string"],
         "nutrition": {
-          "calories": number, "protein_g": number, "fat_g": number, "carbs_g": number
+          "calories": 0,
+          "protein_g": 0,
+          "fat_g": 0,
+          "carbs_g": 0
         },
-        "confidence": number,
-        "health_recommendation": { "should_consume": boolean, "reason": "string" }
+        "confidence": 0,
+        "health_recommendation": {
+          "should_consume": true,
+          "reason": "string"
+        }
       }
     `;
 
     const result = await ai.models.generateContent({
       model: "gemini-1.5-flash",
-      contents: [{
-        role: 'user',
-        parts: [{ text: prompt }, { inlineData: { data: imageBase64, mimeType: "image/jpeg" } }]
-      }]
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { text: prompt },
+            {
+              inlineData: {
+                data: imageBase64,
+                mimeType: "image/jpeg",
+              },
+            },
+          ],
+        },
+      ],
     });
 
-    const text = result.text;
+    const text = result.text; // Use the text getter
+    if (!text) throw new Error('No response from AI');
+    
     const jsonStr = text.replace(/```json|```/g, '').trim();
     res.json(JSON.parse(jsonStr));
   } catch (error) {
+    console.error("ANALYZE ERROR:", error);
     res.status(500).json({ error: 'Failed to analyze image' });
   }
 });
