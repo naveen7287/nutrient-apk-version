@@ -87,13 +87,17 @@ export default function Profile({ profile, onUpdate }: ProfileProps) {
     const targets = calculateTargets(formData);
     const finalData = { ...formData, targets };
 
+    // ✅ REMOVE _id (VERY IMPORTANT)
+    const cleanData = { ...finalData };
+    delete cleanData._id;
+
     const baseUrl = import.meta.env.VITE_APP_URL || '';
     try {
       const res = await fetch(`${baseUrl}/api/profile`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(finalData)
-      });
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cleanData) // ✅ use cleanData
+    });
       
       // If backend returns the profile, use it. Otherwise use our local finalData
       const updatedProfile = await res.json().catch(() => finalData);
