@@ -34,6 +34,7 @@ export default function Scanner({ profile, onLogAdded }: ScannerProps) {
     
     try {
       const base64Data = await fileToBase64(image);
+      
       let baseUrl = import.meta.env.VITE_APP_URL || '';
       if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
 
@@ -42,24 +43,37 @@ export default function Scanner({ profile, onLogAdded }: ScannerProps) {
 
       const response = await fetch(targetUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: base64Data, sourceType, profile }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          imageBase64: base64Data,
+          sourceType,
+          profile
+        }),
       });
 
       console.log("DEBUG: Status Code ->", response.status);
-      
-      const responseText = await response.text();
-      console.log("DEBUG: Raw Response ->", responseText.substring(0, 100)); // See if it's JSON or HTML
 
-      if (!response.ok) throw new Error(`Server Error: ${response.status}`);
+      const responseText = await response.text();
+      console.log("DEBUG: Raw Response ->", responseText.substring(0, 200));
+
+      if (!response.ok) {
+        throw new Error(`Server Error: ${response.status} - ${responseText}`);
+      }
 
       const data = JSON.parse(responseText);
-      setResult(data);
-      setManualIngredients(data.ingredients || []);
-      setShowConfirm(true);
+
+      if (data.error) {
+        alert(data.error);
+      } else {
+        setResult(data);
+        setManualIngredients(data.ingredients || []);
+        setShowConfirm(true);
+      }
     } catch (error) {
       console.error('Scan error:', error);
-      alert("Analysis failed. Check console for debug logs.");
+      alert(error instanceof Error ? error.message : 'Failed to analyze image. Please try again.');
     } finally {
       setScanning(false);
     }
