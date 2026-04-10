@@ -10,8 +10,7 @@ import {
   Droplets, 
   Flame,
   Plus,
-  Trash2,
-  AlertCircle
+  Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI } from "@google/genai";
@@ -60,8 +59,16 @@ export default function Scanner({ profile, onLogAdded }: ScannerProps) {
     
     try {
       const base64Data = await fileToBase64(image);
+      
+      // 1. Get API Key (VITE_ prefix is required for Vite builds)
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || '';
-      const ai = new GoogleGenAI(apiKey);
+      if (!apiKey) {
+        throw new Error('Gemini API Key is missing. Please check your GitHub Secrets or .env file.');
+      }
+
+      // 2. Use the standard public SDK pattern
+      const genAI = new GoogleGenAI(apiKey);
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
       
       const prompt = `
         Analyze this food image. The food is from a ${sourceType} source.
@@ -91,27 +98,22 @@ export default function Scanner({ profile, onLogAdded }: ScannerProps) {
         - Health recommendation must be based on ingredients, nutrition, and user health issues.
       `;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: [
-          {
-            parts: [
-              { text: prompt },
-              {
-                inlineData: {
-                  data: base64Data,
-                  mimeType: image.type,
-                },
-              },
-            ],
+      // 3. Call the AI using the standard generateContent method
+      const result = await model.generateContent([
+        prompt,
+        {
+          inlineData: {
+            data: base64Data,
+            mimeType: image.type,
           },
-        ],
-      });
+        },
+      ]);
 
-      const text = response.text;
+      const response = await result.response;
+      const text = response.text(); // This MUST be a function call .text()
+      
       if (!text) throw new Error('No response from AI');
 
-      // Clean up markdown if present
       const jsonStr = text.replace(/```json|```/g, '').trim();
       const data = JSON.parse(jsonStr);
 
@@ -124,7 +126,7 @@ export default function Scanner({ profile, onLogAdded }: ScannerProps) {
       }
     } catch (error) {
       console.error('Scan error:', error);
-      alert('Failed to analyze image. Please try again.');
+      alert(error instanceof Error ? error.message : 'Failed to analyze image. Please try again.');
     } finally {
       setScanning(false);
     }
@@ -207,7 +209,6 @@ export default function Scanner({ profile, onLogAdded }: ScannerProps) {
         </div>
       ) : (
         <div className="space-y-8">
-          {/* Upload Area */}
           <div 
             onClick={() => !scanning && fileInputRef.current?.click()}
             className={cn(
@@ -265,7 +266,6 @@ export default function Scanner({ profile, onLogAdded }: ScannerProps) {
         </div>
       )}
 
-      {/* Confirmation Modal */}
       <AnimatePresence>
         {showConfirm && result && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
@@ -291,7 +291,6 @@ export default function Scanner({ profile, onLogAdded }: ScannerProps) {
                 </div>
 
                 <div className="space-y-8">
-                  {/* Food Name */}
                   <div className="bg-emerald-50 p-6 rounded-3xl flex items-center justify-between">
                     <div>
                       <p className="text-xs font-bold text-emerald-600 uppercase tracking-widest mb-1">Detected Food</p>
@@ -302,7 +301,6 @@ export default function Scanner({ profile, onLogAdded }: ScannerProps) {
                     </div>
                   </div>
 
-                  {/* Health Recommendation */}
                   {result.health_recommendation && (
                     <div className={cn(
                       "p-6 rounded-3xl border-2 flex gap-4",
@@ -318,7 +316,6 @@ export default function Scanner({ profile, onLogAdded }: ScannerProps) {
                     </div>
                   )}
 
-                  {/* Nutrition Grid */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     {[
                       { label: 'Calories', val: result.nutrition.calories, icon: Flame, color: 'text-orange-500', bg: 'bg-orange-50' },
@@ -334,7 +331,6 @@ export default function Scanner({ profile, onLogAdded }: ScannerProps) {
                     ))}
                   </div>
 
-                  {/* Ingredients */}
                   <div className="space-y-4">
                     <h4 className="font-bold text-lg flex items-center gap-2">
                       Ingredients
