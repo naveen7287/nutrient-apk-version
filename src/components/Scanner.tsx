@@ -31,24 +31,38 @@ export default function Scanner({ profile, onLogAdded }: ScannerProps) {
   const handleScan = async () => {
     if (!image || !sourceType) return;
     setScanning(true);
+    
     try {
       const base64Data = await fileToBase64(image);
+      
       let baseUrl = import.meta.env.VITE_APP_URL || '';
       if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
 
+      // CORRECTED: Calling /api/analyze
       const response = await fetch(`${baseUrl}/api/analyze`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: base64Data, sourceType, profile }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          imageBase64: base64Data,
+          sourceType,
+          profile
+        }),
       });
 
-      if (!response.ok) throw new Error('Failed to analyze image');
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to analyze image');
+      }
+
       const data = await response.json();
       setResult(data);
       setManualIngredients(data.ingredients || []);
       setShowConfirm(true);
     } catch (error) {
-      alert('Failed to analyze image. Please try again.');
+      console.error('Scan error:', error);
+      alert(error instanceof Error ? error.message : 'Failed to analyze image. Please try again.');
     } finally {
       setScanning(false);
     }
@@ -63,53 +77,130 @@ export default function Scanner({ profile, onLogAdded }: ScannerProps) {
       const res = await fetch(`${baseUrl}/api/logs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ food_name: result.food_name, ingredients: manualIngredients, nutrition: result.nutrition, type: sourceType })
+        body: JSON.stringify({
+          food_name: result.food_name,
+          ingredients: manualIngredients,
+          nutrition: result.nutrition,
+          type: sourceType
+        })
       });
-      onLogAdded(await res.json());
+      const newLog = await res.json();
+      onLogAdded(newLog);
       reset();
-    } catch (error) {}
+    } catch (error) {
+      console.error('Error logging meal:', error);
+    }
   };
 
   const reset = () => {
     setSourceType(null); setImage(null); setPreview(null); setResult(null); setShowConfirm(false); setManualIngredients([]);
   };
 
+  const addIngredient = () => {
+    if (newIngredient.trim()) {
+      setManualIngredients([...manualIngredients, newIngredient.trim()]);
+      setNewIngredient('');
+    }
+  };
+
+  const removeIngredient = (index: number) => {
+    setManualIngredients(manualIngredients.filter((_, i) => i !== index));
+  };
+
   return (
-    <div className="max-w-3xl mx-auto p-4">
-      <h1 className="text-2xl font-bold text-center mb-6">AI Food Scanner</h1>
+    <div className="max-w-3xl mx-auto">
+      <div className="mb-10 text-center">
+        <h1 className="text-3xl font-bold tracking-tight mb-2">AI Food Scanner</h1>
+        <p className="text-gray-500">Snap a photo of your meal for instant nutrition analysis.</p>
+      </div>
+
       {!sourceType ? (
-        <div className="grid grid-cols-2 gap-4">
-          <button onClick={() => setSourceType('homemade')} className="p-6 bg-white rounded-2xl shadow">Homemade</button>
-          <button onClick={() => setSourceType('restaurant')} className="p-6 bg-white rounded-2xl shadow">Restaurant</button>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <button onClick={() => setSourceType('homemade')} className="bg-white p-10 rounded-[2.5rem] border-2 border-transparent hover:border-emerald-500 transition-all group shadow-sm">
+            <div className="w-20 h-20 bg-emerald-50 rounded-3xl flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
+              <Activity className="w-10 h-10 text-emerald-500" />
+            </div>
+            <h3 className="text-xl font-bold mb-2">Homemade</h3>
+            <p className="text-gray-400 text-sm">Meals prepared at home with fresh ingredients.</p>
+          </button>
+          <button onClick={() => setSourceType('restaurant')} className="bg-white p-10 rounded-[2.5rem] border-2 border-transparent hover:border-blue-500 transition-all group shadow-sm">
+            <div className="w-20 h-20 bg-blue-50 rounded-3xl flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
+              <Beef className="w-10 h-10 text-blue-500" />
+            </div>
+            <h3 className="text-xl font-bold mb-2">Restaurant</h3>
+            <p className="text-gray-400 text-sm">Dining out or takeaway from restaurants.</p>
+          </button>
         </div>
       ) : (
-        <div className="space-y-4">
-          <div onClick={() => fileInputRef.current?.click()} className="border-4 border-dashed p-10 text-center rounded-2xl">
-            {preview ? <img src={preview} className="max-h-60 mx-auto" /> : "Tap to upload photo"}
+        <div className="space-y-8">
+          <div onClick={() => !scanning && fileInputRef.current?.click()} className={cn("relative bg-white rounded-[2.5rem] border-4 border-dashed p-12 text-center transition-all cursor-pointer overflow-hidden", preview ? "border-emerald-500" : "border-gray-100 hover:border-emerald-200")}>
+            {preview ? (
+              <div className="relative aspect-video rounded-2xl overflow-hidden shadow-inner">
+                <img src={preview} alt="Preview" className="w-full h-full object-cover" />
+              </div>
+            ) : (
+              <div className="py-10">
+                <Upload className="w-10 h-10 text-gray-300 mx-auto mb-6" />
+                <h3 className="text-xl font-bold mb-2">Upload Meal Photo</h3>
+                <p className="text-gray-400">Click to browse or drag and drop</p>
+              </div>
+            )}
             <input type="file" ref={fileInputRef} onChange={(e) => {
               const file = e.target.files?.[0];
               if (file) { setImage(file); setPreview(URL.createObjectURL(file)); }
             }} className="hidden" accept="image/*" />
           </div>
-          <button onClick={handleScan} disabled={scanning} className="w-full bg-emerald-500 text-white p-4 rounded-xl font-bold">
-            {scanning ? "Analyzing..." : "Analyze Nutrition"}
-          </button>
+
+          <div className="flex gap-4">
+            <button onClick={reset} className="flex-1 bg-gray-100 text-gray-600 py-4 rounded-2xl font-bold hover:bg-gray-200 transition-all">Cancel</button>
+            <button onClick={handleScan} disabled={!image || scanning} className="flex-[2] bg-emerald-500 text-white py-4 rounded-2xl font-bold shadow-lg shadow-emerald-200 hover:bg-emerald-600 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+              {scanning ? <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }}><Activity className="w-6 h-6" /></motion.div> : <><Camera className="w-6 h-6" /> Analyze Nutrition</>}
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Confirmation Modal (Simplified for space) */}
       <AnimatePresence>
         {showConfirm && result && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-            <div className="bg-white p-6 rounded-2xl w-full max-w-md">
-              <h2 className="text-xl font-bold mb-4">{result.food_name}</h2>
-              <div className="grid grid-cols-2 gap-2 mb-4">
-                <div className="bg-gray-100 p-2 rounded">Cals: {result.nutrition.calories}</div>
-                <div className="bg-gray-100 p-2 rounded">Protein: {result.nutrition.protein_g}g</div>
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowConfirm(false)} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.9, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9, y: 20 }} className="relative bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+              <div className="p-8 overflow-y-auto custom-scrollbar">
+                <div className="flex items-center justify-between mb-8">
+                  <h2 className="text-2xl font-bold">Confirm Nutrition</h2>
+                  <button onClick={() => setShowConfirm(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><X className="w-6 h-6 text-gray-400" /></button>
+                </div>
+                <div className="space-y-8">
+                  <div className="bg-emerald-50 p-6 rounded-3xl flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-bold text-emerald-600 uppercase tracking-widest mb-1">Detected Food</p>
+                      <h3 className="text-2xl font-black text-emerald-900">{result.food_name}</h3>
+                    </div>
+                    <div className="bg-white p-3 rounded-2xl shadow-sm">
+                      <span className="text-emerald-600 font-bold">{Math.round(result.confidence * 100)}% Match</span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {[
+                      { label: 'Calories', val: result.nutrition.calories, icon: Flame, color: 'text-orange-500', bg: 'bg-orange-50' },
+                      { label: 'Protein', val: result.nutrition.protein_g + 'g', icon: Beef, color: 'text-blue-500', bg: 'bg-blue-50' },
+                      { label: 'Fat', val: result.nutrition.fat_g + 'g', icon: Droplets, color: 'text-amber-500', bg: 'bg-amber-50' },
+                      { label: 'Carbs', val: result.nutrition.carbs_g + 'g', icon: Activity, color: 'text-purple-500', bg: 'bg-purple-50' },
+                    ].map((n) => (
+                      <div key={n.label} className={cn("p-4 rounded-2xl text-center", n.bg)}>
+                        <n.icon className={cn("w-5 h-5 mx-auto mb-2", n.color)} />
+                        <div className="text-lg font-black">{n.val}</div>
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">{n.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
-              <button onClick={handleConfirm} className="w-full bg-emerald-500 text-white p-3 rounded-xl">Confirm & Log</button>
-              <button onClick={() => setShowConfirm(false)} className="w-full mt-2 text-gray-500">Cancel</button>
-            </div>
+              <div className="p-8 bg-gray-50 border-t border-gray-100 flex gap-4">
+                <button onClick={() => setShowConfirm(false)} className="flex-1 bg-white border border-gray-200 text-gray-600 py-4 rounded-2xl font-bold hover:bg-gray-50 transition-all">Edit</button>
+                <button onClick={handleConfirm} className="flex-[2] bg-emerald-500 text-white py-4 rounded-2xl font-bold shadow-lg shadow-emerald-200 hover:bg-emerald-600 transition-all flex items-center justify-center gap-2"><Check className="w-6 h-6" /> Confirm & Add to Log</button>
+              </div>
+            </motion.div>
           </div>
         )}
       </AnimatePresence>
